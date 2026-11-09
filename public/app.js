@@ -8,6 +8,7 @@ import { createAutosave } from "./autosave.js";
 import { createHistoryClient } from "./history-client.js";
 import { adjustTimeline, checkSequence, reorderSequence } from "./timeline-edit.js";
 import { exportScenario } from "./scenario-export.js";
+import { createFleetBundle } from "./fleet-bundle.js";
 import { SCENARIO_LIBRARY, createLibraryScenario } from "./scenario-library.js";
 import { renderPresentation } from "./scenario-presentation.js";
 import { createFleetDemoMap, createOfficeDemoMap, createCoordinationDemoMap, replaceOldDemoMaps, refreshDemoScenarios } from "./demo-map.js";
@@ -32,6 +33,7 @@ let running = false, looping = false, speed = 1, last = 0, px = 26, snapping = t
 let undo = [], redo = [], dirty = true, timer, draft = null, dragging = false;
 let bgCache, scale = 1;
 let runtimeError = "";
+let fleetExhibit = null, fleetStarting = false;
 let floorCache;
 let focusMap, focusKey = "";
 let renderedMap, roomStamp = "", displayStamp = "", pathStamp = "";
@@ -55,7 +57,8 @@ const durableHistory = createHistoryClient(localStorage, (message, error) => {
 window.addEventListener("storage", e => {
   if (e.key === STORE || e.key === null) autosave.changed();
 });
-const map = () => project.maps.find(m => m.id === mapId);
+const map = () => fleetExhibit?.bundle.scenarios.find(item => item.map_id === mapId)?.map ??
+  project.maps.find(m => m.id === mapId);
 const selectedTrack = () => map().tracks.find(t => t.id === selection.track);
 const selectedAction = () => selectedTrack()?.actions.find(a => a.id === selection.action);
 const entries = m => m.tracks.flatMap(t => t.actions.map(a => ({ t, a })));
@@ -1556,11 +1559,12 @@ function preview(options = {}) {
   }
     $("pathLayer").replaceChildren(...paths);
   }
-  const nextDisplays = JSON.stringify([state.displays, state.roomActivities, selection.action,
+  const nextDisplays = JSON.stringify([!!fleetExhibit, state.displays, state.roomActivities, selection.action,
     state.actors.map(a => [a.id, a.aggregated])]);
   if (nextDisplays !== displayStamp) {
     displayStamp = nextDisplays;
     $("effectLayer").replaceChildren(...state.displays.filter(d =>
+    !(fleetExhibit && state.actors.find(a => a.id === d.actorId)?.kind === "robot") &&
     !roomActivityActors.has(d.actorId) &&
     !state.actors.find(a => a.id === d.actorId)?.aggregated).map(d => {
     const actor = state.actors.find(a => a.id === d.actorId);
@@ -1576,6 +1580,7 @@ function preview(options = {}) {
   }
   const actors = [];
   for (const a of state.actors) {
+    if (fleetExhibit && a.kind === "robot") continue;
     if (roomActivityActors.has(a.id)) continue;
     if (a.aggregated && selection.track !== a.id) continue;
     const g = actorGlyph(a);
@@ -1814,6 +1819,7 @@ function expandedPreview(expanded) {
   $("fullscreenPreview").setAttribute("aria-pressed", String(expanded));
   stageZoom.querySelector("select").value = String(scale);
   applyZoom();
+  if (!expanded && fleetExhibit) void endFleetExhibition();
 }
 $("fullscreenPreview").onclick = safe(async () => {
   if (document.fullscreenElement === previewPanel) {
@@ -1849,7 +1855,11 @@ document.addEventListener("keydown", e => {
       controls[e.shiftKey ? controls.length - 1 : 0].focus();
     }
   }
-  if (e.key === "Escape" && !document.fullscreenElement) expandedPreview(false);
+  if (e.key === "Escape" && previewPanel.classList.contains("preview-expanded")) {
+    if (document.fullscreenElement === previewPanel) {
+      void safe(async () => { await document.exitFullscreen(); expandedPreview(false); })();
+    } else expandedPreview(false);
+  }
 });
 $("showGrid").onchange = preview; $("showPaths").onchange = preview;
 $("timelineScroll").addEventListener("scroll", () => { $("trackLabels").scrollTop = $("timelineScroll").scrollTop; });
@@ -1863,6 +1873,134 @@ $("ruler").onpointerdown = e => {
 function toggle() {
   if (running) pause(); else { running = true; last = performance.now(); $("play").textContent = "Ⅱ"; $("play").setAttribute("aria-label", "一時停止"); }
 }
+async function fleetRequest(path, body) {
+  const response = await fetch(`/api/fleet${path}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body), signal: AbortSignal.timeout(5000),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error ?? `フリート連携 HTTP ${response.status}`);
+  return data;
+}
+function fleetState(session) {
+  const duration = session.selected === null ? 0 : planFor(map()).duration;
+  return {
+    selected_index: session.selected,
+    mode: session.selected === null ? "waiting" : time >= duration ? "finished" :
+      running ? "running" : session.started ? "paused" : "selected",
+    time_s: Math.min(time, duration),
+  };
+}
+function updateFleetStatus(session) {
+  const state = fleetState(session);
+  const label = { waiting: "フリート指示待ち", selected: "開始指示待ち",
+    running: "再生中", paused: "一時停止", finished: "終了" }[state.mode];
+  const invalid = session.bundle.scenarios.filter(item => !item.executable).map(item => item.index);
+  $("fleetStatus").textContent = `展示 · ${session.selected === null ? "" : `index ${session.selected} · `}${label}` +
+    (invalid.length ? ` · 実行不可index: ${invalid.join(", ")}` : "");
+}
+async function pollFleet(session) {
+  if (fleetExhibit !== session) return;
+  try {
+    const data = await fleetRequest("/heartbeat", {
+      client_token: session.token, state: fleetState(session),
+      ...(session.ack ? { ack: session.ack } : {}),
+    });
+    if (fleetExhibit !== session) return;
+    session.ack = null;
+    if (data.command) {
+      const command = data.command;
+      try {
+        if (command.bundle_id !== session.bundle.bundle_id) throw new Error("連携用セットが一致しません。");
+        if (command.type === "select") {
+          const item = session.bundle.scenarios.find(item => item.index === command.index);
+          if (!item) throw new Error("指定indexがありません。");
+          pause(); session.selected = item.index; session.started = false;
+          mapId = item.map_id; time = 0; selection = {}; render();
+        } else if (command.type === "start") {
+          if (session.selected === null) throw new Error("シナリオが未選択です。");
+          if (time >= planFor(map()).duration) time = 0;
+          if (!running) toggle();
+          session.started = true;
+        } else if (command.type === "pause") pause();
+        else if (command.type === "reset") { pause(); time = 0; session.started = false; preview(); }
+        else throw new Error("未対応の展示指示です。");
+        session.ack = { id: command.id };
+      } catch (error) {
+        pause(); session.ack = { id: command.id, error: error.message.slice(0, 1000) };
+        notify(`展示指示を適用できません：${error.message}`, true);
+      }
+    }
+    updateFleetStatus(session);
+    session.timer = setTimeout(() => { void pollFleet(session); }, 250);
+  } catch (error) {
+    if (fleetExhibit !== session) return;
+    pause();
+    $("fullscreenStatus").hidden = false;
+    $("fullscreenStatus").textContent = `展示連携が停止しました。終了して入り直してください：${error.message}`;
+    notify($("fullscreenStatus").textContent, true);
+    $("fleetStatus").textContent = "展示 · 通信エラー";
+  }
+}
+async function endFleetExhibition() {
+  const session = fleetExhibit;
+  if (!session) return;
+  fleetExhibit = null; clearTimeout(session.timer); pause();
+  previewPanel.classList.remove("fleet-exhibition");
+  $("exhibitionMode").disabled = false;
+  $("fleetStatus").hidden = true;
+  for (const [control, disabled] of session.controls) control.disabled = disabled;
+  mapId = session.before.mapId; time = session.before.time; selection = session.before.selection;
+  looping = session.before.looping; speed = session.before.speed;
+  render();
+  try { await fleetRequest("/end", { client_token: session.token }); }
+  catch (error) { notify(`展示終了の通知に失敗しました。再接続まで最大10秒待ってください：${error.message}`, true); }
+}
+$("exportFleetBundle").onclick = safe(() => {
+  const bundle = fleetExhibit?.bundle ?? createFleetBundle(project);
+  const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }));
+  node("a", { href: url, download: "fleet-bundle.json" }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const invalid = bundle.scenarios.filter(item => !item.executable).map(item => item.index);
+  notify(`全マップ・初期位置・シーケンスを出力しました。実機指令ではありません。${invalid.length ?
+    `実行不可のindex（検証結果付き）：${invalid.join(", ")}` : ""}`, !!invalid.length);
+});
+$("exhibitionMode").onclick = safe(async () => {
+  if (fleetExhibit || fleetStarting) return;
+  // 全画面要求をユーザー操作内で行うため、サーバー登録より前にローカル検証する。
+  createFleetBundle(project);
+  fleetStarting = true;
+  $("exhibitionMode").disabled = true;
+  const before = { mapId, time, selection, speed, looping };
+  pause();
+  try {
+    if (!previewPanel.classList.contains("preview-expanded")) await $("fullscreenPreview").onclick();
+    if (!previewPanel.classList.contains("preview-expanded")) throw new Error("全画面表示が解除されました。");
+    const data = await fleetRequest("/session", { project: projectForSave(project) });
+    const session = {
+      bundle: data.bundle, token: data.client_token, before, selected: null, started: false,
+      controls: [...previewTransport.querySelectorAll("button,input,select")]
+        .filter(control => !["fullscreenPreview", "exhibitionMode"].includes(control.id))
+        .map(control => [control, control.disabled]),
+    };
+    fleetExhibit = session;
+    if (!previewPanel.classList.contains("preview-expanded")) {
+      await endFleetExhibition(); return;
+    }
+    for (const [control] of session.controls) control.disabled = true;
+    looping = false; speed = 1; time = 0; selection = {}; selectedBlocks.clear();
+    previewPanel.classList.add("fleet-exhibition");
+    $("fleetStatus").hidden = false;
+    updateFleetStatus(session); preview();
+    void pollFleet(session);
+  } catch (error) {
+    if (previewPanel.classList.contains("preview-expanded")) {
+      if (document.fullscreenElement === previewPanel) await document.exitFullscreen();
+      expandedPreview(false);
+    }
+    throw error;
+  } finally { fleetStarting = false; $("exhibitionMode").disabled = !!fleetExhibit; }
+});
 $("play").onclick = toggle; $("home").onclick = () => { pause(); time = 0; preview(); };
 $("loop").onclick = () => { looping = !looping; $("loop").classList.toggle("active", looping); $("loop").setAttribute("aria-pressed", looping); };
 $("speed").onchange = e => { speed = Number(e.target.value); };
@@ -2155,7 +2293,7 @@ document.addEventListener("keydown", safe(async e => {
   const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName);
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); download(); return; }
   if (typing) return;
-  if (e.code === "Space") { e.preventDefault(); toggle(); }
+  if (e.code === "Space") { e.preventDefault(); if (!fleetExhibit) toggle(); }
   if (previewPanel.classList.contains("preview-expanded")) return;
   if (e.key === "Delete") { e.preventDefault(); await deleteSelection(); }
   if (e.ctrlKey || e.metaKey) {

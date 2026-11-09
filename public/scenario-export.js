@@ -3,7 +3,9 @@ import { buildNavigation } from "./floor-plan.js";
 
 export function exportScenario(map) {
   const plan = compilePlan(map, { fixedTimeline: true });
-  if (plan.errors.length) throw new Error(`実行不可の動作を修正してから出力してください：${plan.errors.join(" / ")}`);
+  const problems = [...plan.errors, ...plan.entries.filter(entry => entry.blocked)
+    .map(entry => `${entry.track.name} / ${entry.action.name}: ${entry.reason}`)];
+  if (problems.length) throw new Error(`実行不可の動作を修正してから出力してください：${problems.join(" / ")}`);
   const position = point => point ? { x: point.x / 16, y: point.y / 9, yaw_deg: point.yaw } : null;
   return {
     schema: "scene-scenario-draft/v1", simulation_only: true, hardware_approved: false,

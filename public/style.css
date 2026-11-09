@@ -118,6 +118,9 @@ button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer;bo
 .history-record span{overflow-wrap:anywhere;min-width:0}
 .history-record button{white-space:nowrap;flex-shrink:0}
 #historyStatus{font-size:10px;overflow-wrap:anywhere}
+#fleetStatus{font-size:11px;color:#8ee4ce;flex-basis:100%;text-align:center}
+.fleet-exhibition #scenarioLayer [data-scenario-cue="route"]{display:none}
+.fleet-exhibition #pathLayer,.fleet-exhibition #handleLayer,.fleet-exhibition #stageSelection{display:none}
 #fitStage{display:inline-flex}
 .scenario-library-dialog{width:min(920px,94vw);max-width:920px;max-height:90vh;overflow:auto}
 .scenario-library-dialog .modal-heading{position:sticky;top:0;background:#20222d;z-index:1}

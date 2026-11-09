@@ -2,6 +2,29 @@
 
 ## 配布版・永続履歴
 
+最初に[AI向け統合設計・仕様・引継ぎ](AI_HANDOFF.md)を参照してください。
+本書には旧モデルAPI・開発途中の記録も含みます。現行UIは固定時間軸で、
+接続条件・合流・自動遅延・人物旋回を使用しません。
+とくに予定JSONの百分率座標と、同梱navigationの1600×900座標は別単位です。
+統合仕様・未実装の責任境界・r1〜r13の履歴は上記文書にまとめています。
+
+### r13: フリート用のセットと展示側の入口
+
+[FLEET_INTEGRATION.md](FLEET_INTEGRATION.md)に完全な形式・API・呼出し例を記載しています。
+`scene-fleet-bundle/v1`は全マップの1始まりindex・map・navigation・robots.initial/sequenceと、
+既存のscenario_draftを同じスナップショットへまとめます。
+外側のrobotsの位置は1600×900、scenario_draftの位置だけ百分率です。
+[サンプルJSON](fleet-bundle.example.json)と[生成CLI](scripts/export-fleet-bundle.js)を同梱します。
+中間ファイル・通信方式の最終選択、実機の実行管理はフリート側の責任です。
+
+展示モードはロボット描画を抑止して全画面で待機し、loopbackの`/api/fleet`から
+select/start/pause/resetを受け取ります。bundle_idとindexで特定し、
+HTTP202とブラウザーの適用確認を分離します。人・設備・演出とロボットの計算は維持します。
+この入口は展示表示の制御のみで、実機API・測位受信・実機結果の注入APIではありません。
+サーバー再起動でセットとセッションは消えます。編集中のJSON・履歴にはセッションを保存しません。
+従来の「通信未実装」という記述は実機・設備・フリート本体との通信を指し、
+この新しいローカル展示制御APIは例外です。
+
 配布ZIPは`scripts/package.ps1 -Destination <出力ZIP>`の許可リストで生成します。
 `AGENTS.md`とCopilot指示、`/start`プロンプト、Windows用`start.ps1`を同梱します。
 起動時のnpm依存はありません。Windowsの`start.ps1`はNode.js 22以上を探索し、不足時は
@@ -208,8 +231,9 @@ CSPは`connect-src 'self'`とし、別オリジンへの接続を禁止してい
 
 ## 座標契約
 
-今回合わせた正本は隣接プロジェクトの
-[Node.js版測位仕様](../node-localizer/README.md#4-座標と検出状態の契約)です。
+今回合わせた契約は隣接するNode.js版測位の`robot_pose/v3`です。
+測位プロジェクトは配布ZIPに含まれないため、
+[統合引継ぎの座標契約](AI_HANDOFF.md#3-座標寸法の契約)と以下の表を同梱の参照先とします。
 `robot_pose/v3`の位置・角度をScene Studioへ渡す際に、Yやyawを反転しないでください。
 
 | 項目 | 契約 |
@@ -250,7 +274,7 @@ import { useTimelineOnly, validateProject, compilePlan, samplePlan } from "./pub
 
 const project = validateProject(useTimelineOnly(JSON.parse(jsonText)));
 const map = project.maps[0];
-const plan = compilePlan(map);
+const plan = compilePlan(map, { fixedTimeline: true });
 const state = samplePlan(plan, 12.5);
 ```
 

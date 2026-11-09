@@ -2,6 +2,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { openHistoryStore, HistoryError } from "./history-store.js";
+import { createFleetSession, handleFleetRequest } from "./fleet-session.js";
 
 const port = Number(process.env.PORT ?? 3100);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");
@@ -13,9 +14,12 @@ const files = new Map([
   ["/map-editor.css", ["map-editor.css", "text/css"]],
   ["/style.css", ["style.css", "text/css"]],
 ]);
+files.set("/fleet-bundle.js", ["fleet-bundle.js", "text/javascript"]);
+const fleet = createFleetSession();
 const server = http.createServer(async (req, res) => {
   const allowedHosts = [`localhost:${port}`, `127.0.0.1:${port}`];
   if (!allowedHosts.includes(req.headers.host)) { res.writeHead(403).end("Forbidden host"); return; }
+  if (await handleFleetRequest(req, res, fleet, port)) return;
   if (req.url?.startsWith("/api/history")) {
     const reply = (status, data) => res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store",
