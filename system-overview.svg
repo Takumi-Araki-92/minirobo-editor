@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500">
+  <title>システム全体像：シナリオ作成と実機制御の責任分離</title>
+  <rect width="1200" height="500" fill="#141922"/>
+  <g font-family="Segoe UI, Yu Gothic UI, sans-serif" fill="#e7eefb">
+    <text x="40" y="52" font-size="28">シナリオ作成 → 連携仕様の合意 → フリート管理 → 実機</text>
+    <text x="40" y="87" font-size="18" fill="#ffd28c">現在はシミュレーションと予定JSON出力まで。実機・PLCへの送信は行いません。</text>
+    <rect x="40" y="135" width="330" height="230" rx="14" fill="#25364b" stroke="#90c5ff" stroke-width="2"/>
+    <text x="65" y="175" font-size="24">Robot Scene Studio</text>
+    <text x="65" y="220" font-size="19">マップ・設備・役割別シーケンス</text>
+    <text x="65" y="255" font-size="19">時系列プレビュー・競合警告</text>
+    <text x="65" y="290" font-size="19">全編集履歴・復元・再適用</text>
+    <text x="65" y="330" font-size="16" fill="#93e0c8">担当：ストーリーと予定の作成</text>
+    <path d="M385 240H475L458 228M475 240L458 252" fill="none" stroke="#ffd28c" stroke-width="3" stroke-dasharray="6 4"/>
+    <text x="387" y="212" font-size="15" fill="#ffd28c">予定JSON</text>
+    <text x="387" y="278" font-size="15" fill="#ffd28c">接続は未実装</text>
+    <rect x="490" y="135" width="350" height="230" rx="14" fill="#263e36" stroke="#93e0c8" stroke-width="2"/>
+    <text x="515" y="175" font-size="24">フリート管理システム</text>
+    <text x="515" y="220" font-size="19">シナリオ選択・実行管理</text>
+    <text x="515" y="255" font-size="19">位置監視・衝突回避・補正</text>
+    <text x="515" y="290" font-size="19">停止・再開・完了の判断</text>
+    <text x="515" y="330" font-size="16" fill="#93e0c8">担当・通信仕様は連携先と要合意</text>
+    <path d="M855 240H935L918 228M935 240L918 252" fill="none" stroke="#ffd28c" stroke-width="3" stroke-dasharray="6 4"/>
+    <rect x="950" y="135" width="210" height="230" rx="14" fill="#3c354b" stroke="#c7acfa" stroke-width="2"/>
+    <text x="975" y="175" font-size="24">実機・設備</text>
+    <text x="975" y="225" font-size="19">ロボット2台～</text>
+    <text x="975" y="265" font-size="19">移動・回転</text>
+    <text x="975" y="305" font-size="19">状態・完了通知</text>
+    <text x="40" y="420" font-size="18">接続前に必要：ロボットID対応／座標・向きの変換／実行の主導権／遅延時の扱い／安全停止と復帰</text>
+    <text x="40" y="455" font-size="18" fill="#ffd28c">ストーリー確認の扉通過は見た目上の確認です。実機の通行許可・安全保証ではありません。</text>
+  </g>
+</svg>

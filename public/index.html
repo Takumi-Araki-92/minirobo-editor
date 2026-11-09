@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robot Scene Studio — Choreography editor</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/map-editor.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">R<span>↗</span></span><div>SCENE<span class="brand-sub">ROBOT CHOREOGRAPHY STUDIO</span></div><span class="version">α 0.6</span></div>
+    <nav class="workspace-tabs" aria-label="ワークスペース"><span class="active">Compose</span><span class="non-tab">Preview & simulate</span></nav>
+    <div class="top-actions"><span class="sim-badge"><i></i> SIMULATION ONLY</span><button id="openLatestDemo" class="quiet">最新テストマップ</button><button id="openOfficeDemo" class="quiet">オフィステスト</button><button id="openProject" class="quiet">開く</button><button id="saveProject" class="primary">↗ プロジェクト保存</button></div>
+  </header>
+  <div class="projectbar">
+    <div class="project-title"><span class="dim">PROJECT /</span><input id="projectName" aria-label="プロジェクト名" maxlength="120"><span id="saveState" class="save-state">未保存</span></div>
+    <div class="project-tools"><button id="undo" title="元に戻す (Ctrl+Z)" aria-label="元に戻す">↶</button><button id="redo" title="やり直す (Ctrl+Shift+Z)" aria-label="やり直す">↷</button><button id="openHistory" class="quiet">編集履歴</button><span class="separator"></span><button id="newProject" class="quiet">新規</button><label>長さ <input id="duration" type="number" min="1" max="3600" step="1" aria-label="シーケンス長"> s</label></div>
+  </div>
+  <div class="mapbar"><div id="mapTabs" role="tablist" aria-label="マップ"></div><button id="addMap">＋ シーケンス</button><button id="openScenarioLibrary">テストシナリオ集</button><button id="editMap" class="quiet">マップを編集</button><button id="renameMap" class="quiet">名前を変更</button><button id="deleteMap" class="quiet danger">マップを削除</button></div>
+  <main class="workspace">
+    <aside class="library panel">
+      <div class="panel-heading"><h2>プロジェクト</h2><span class="micro">ASSETS</span></div>
+      <div class="library-section">
+        <div class="eyebrow">FLOOR PLAN</div>
+        <button id="importFloor" class="floor-upload"><span class="upload-icon">▧<b>＋</b></span><strong>マップを編集する</strong><small>32 × 18 GRID · 部屋 / 廊下 / ドア / 家具</small></button>
+        <div id="floorInfo" class="floor-info">平面図はまだありません</div>
+        <label class="opacity-control">背景濃度<input id="opacity" type="range" min="0" max="1" step=".05" value=".7"></label>
+        <button id="removeFloor" class="text-button">背景を取り除く</button>
+      </div>
+      <div class="library-section">
+        <div class="section-label"><span class="eyebrow">ROOMS & ZONES</span><button id="addRoom" class="icon-button" aria-label="部屋を追加" title="部屋を追加">＋</button></div>
+        <div id="roomList"></div>
+        <p class="help">マップ編集で部屋・廊下を作成できます。クリックで対応する行へ移動。</p>
+      </div>
+      <div class="library-section">
+        <div class="eyebrow">SCENE OBJECTS</div>
+        <div id="objectList"></div>
+      </div>
+      <div class="library-footer"><span class="dot"></span> LOCAL WORKSPACE<p>映像・プロジェクトを外部送信しません。<br>実機への制御指令は送信しません。</p></div>
+    </aside>
+    <section class="center-workspace">
+      <section class="preview panel" aria-label="実行プレビュー">
+        <div class="panel-heading"><div class="heading-group"><h2>ステージ</h2><span class="panel-tab active">実行プレビュー</span><span class="micro">1600 × 900</span></div><div class="preview-tools"><label><input id="showPaths" type="checkbox" checked> パス</label><label><input id="showGrid" type="checkbox" checked> グリッド</label><button id="fitStage" class="quiet">全体表示</button></div></div>
+        <p id="fullscreenStatus" class="help" role="status" hidden></p>
+        <div class="stage-wrap">
+          <div class="stage-meta"><span><i class="live-dot"></i> LIVE COMPOSITION</span><span id="stageCursor">X — &nbsp; Y —</span></div>
+          <svg id="stage" viewBox="0 0 1600 900" role="img" aria-label="平面図上のロボット位置とイベント">
+            <defs>
+              <pattern id="smallGrid" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#2b303a" stroke-width="1"/></pattern>
+              <pattern id="largeGrid" width="200" height="200" patternUnits="userSpaceOnUse"><rect width="200" height="200" fill="url(#smallGrid)"/><path d="M 200 0 L 0 0 0 200" fill="none" stroke="#353b49" stroke-width="1.5"/></pattern>
+            </defs>
+            <rect width="1600" height="900" fill="#181c24"/>
+            <image id="floorImage" width="1600" height="900" preserveAspectRatio="none"/>
+            <g id="floorLayer"></g>
+            <rect id="gridLayer" width="1600" height="900" fill="url(#largeGrid)" pointer-events="none"/>
+            <g id="roomLayer"></g><g id="pathLayer"></g><g id="effectLayer"></g><g id="scenarioLayer" pointer-events="none"></g><g id="doorLayer"></g><g id="robotLayer"></g><g id="handleLayer"></g>
+            <g id="emptyFloor" pointer-events="none"><text x="800" y="408" class="empty-floor-title">YOUR FLOOR. YOUR CHOREOGRAPHY.</text><text x="800" y="455" class="empty-floor-sub">マップを作成して、空間に動きをデザイン。</text></g>
+          </svg>
+          <span class="axis-label bottom-left">0, 0 <b>↗</b></span><span class="axis-label top-right">1600, 900</span>
+          <div id="pickHint" class="pick-hint" hidden></div>
+          <div id="proximity" class="proximity" hidden></div>
+        </div>
+        <div class="transport" role="group" aria-label="プレビュー再生操作"><span class="timecode" id="previewTime">00:00.00</span><input id="previewSeek" class="preview-seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="プレビュー再生位置"><div class="transport-main"><button id="home" aria-label="先頭に戻る" title="先頭に戻る">|◀</button><button id="previous" aria-label="前の編集点" title="前の編集点">‹</button><button id="play" class="play-button" aria-label="再生" title="再生 / 一時停止 (Space)">▶</button><button id="next" aria-label="次の編集点" title="次の編集点">›</button><button id="loop" aria-label="ループ" aria-pressed="false" title="ループ再生">⟳</button></div><div class="transport-end"><select id="speed" aria-label="再生速度"><option value=".5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><button id="fullscreenPreview" class="quiet" aria-pressed="false">全画面</button></div></div>
+      </section>
+      <section class="timeline panel" aria-label="タイムライン">
+        <div class="panel-heading timeline-heading"><div class="heading-group"><h2>シーケンス</h2><span class="sequence-dot"></span><span id="trackCount" class="micro"></span></div><div class="timeline-tools"><button id="prepareFacingTurns" class="quiet" aria-label="全マップに旋回バーを追加" title="全マップに旋回バーを追加">旋回を配置</button><button id="snap" class="toggle active" aria-pressed="true" title="0.5秒スナップ">⌁ スナップ</button><label class="zoom-label">− <input id="zoom" aria-label="時間軸ズーム" type="range" min="12" max="100" value="22"> ＋</label><button id="fitTimeline" class="quiet">全体</button></div></div>
+        <details class="timeline-settings"><summary>シーケンス設定・デモ・連携</summary>
+        <div class="scene-options"><button id="executionMode" class="quiet">時間軸実行へ切替</button>
+          <label>扉の確認 <select id="doorMode" aria-label="扉の確認モード"><option value="story">ストーリー確認（警告して継続・既定）</option><option value="strict">連携確認（施錠で停止）</option></select></label>
+          <button id="exportScenario" class="quiet">連携用JSON（予定）</button>
+          <label>デモ追加 <select id="coordinationDemo" aria-label="連携シナリオを選択"><option value="fire">火災・退避と駆けつけ（2台）</option><option value="yield">通路待避・交互通行（2台）</option><option value="conflict">競合例（シミュレーション専用）</option></select></label>
+          <button id="addCoordinationDemo" class="quiet">シナリオを追加</button>
+        </div>
+        </details>
+        <div id="selectionTools" class="selection-tools" aria-label="複数ブロック調整"></div>
+        <div class="timeline-body">
+          <div class="track-sidebar"><div class="track-header"><span id="timelineTime">00:00.00</span><button id="addTrackMenu" class="icon-button" aria-label="トラック追加パレットへ">＋</button></div><div id="trackLabels"></div></div>
+          <div id="timelineScroll" class="timeline-scroll"><div id="timelineCanvas" class="timeline-canvas"><div id="ruler" class="ruler"></div><div id="lanes"></div><div id="playhead" class="playhead"><span></span></div></div></div>
+        </div>
+        <div class="timeline-footer"><span><span class="keycap">Space</span> 再生 <span class="keycap">Del</span> 削除 <span class="keycap">Ctrl D</span> 複製</span><span>ドラッグで移動 · 両端で長さを調整</span></div>
+      </section>
+    </section>
+    <aside class="inspector panel">
+      <div class="panel-heading"><h2>コントロール</h2><span class="micro">INSPECTOR</span></div>
+      <div class="palette">
+        <div class="eyebrow">ADD TO SEQUENCE</div>
+        <div class="palette-grid">
+          <button data-add="robot"><span class="palette-icon violet">↗</span><strong>ロボット</strong><small>移動と向き</small></button>
+          <button data-add="human"><span class="palette-icon blue">♙</span><strong>人間グループ</strong><small>人数を自由に指定</small></button>
+          <button data-add="room"><span class="palette-icon pink">▧</span><strong>部屋</strong><small>状態イベント</small></button>
+          <button data-add="display"><span class="palette-icon lime">T</span><strong>表示・イベント</strong><small>クラスで整理</small></button>
+        </div>
+        <p class="palette-note">上のボタンは行を追加します。<br>下のアクションをマップ・行へドラッグ。</p>
+        <div id="actionPalette"></div>
+        <button id="emptyTrack" class="wide quiet">＋ 選択中と同種の行を追加</button>
+      </div>
+      <div class="selection-heading"><span class="eyebrow">SELECTION</span><span id="selectionBadge" class="selection-badge">SEQUENCE</span></div>
+      <div id="safetyWarnings" class="safety-warnings" role="alert" hidden></div>
+      <div id="inspectorContent" class="inspector-content"></div>
+      <div class="inspector-bottom"><span class="micro">SIMULATION · NOT CONNECTED</span><p>プレビューは予定動作です。<br>実測位置や実機の挙動ではありません。</p></div>
+    </aside>
+  </main>
+  <footer class="statusbar"><span id="notice" role="status">準備完了。平面図を読み込むか、クリップを選択して編集を開始。</span><span id="historyStatus" role="status">履歴接続中</span><span id="storageStatus">LOCAL AUTOSAVE</span></footer>
+  <input id="projectFile" type="file" accept=".json,application/json" hidden>
+  <dialog id="confirmDialog"><form method="dialog"><h2 id="confirmTitle"></h2><p id="confirmMessage"></p><div class="dialog-actions"><button value="cancel">キャンセル</button><button value="ok" class="primary">続行</button></div></form></dialog>
+  <dialog id="historyDialog" aria-labelledby="historyTitle"><h2 id="historyTitle">編集履歴</h2><p>操作確定ごとにPCへ保存します。過去の状態を適用しても、後続の履歴は残ります。</p><div id="historyRecords"></div><div class="dialog-actions"><button id="retryHistory">未送信履歴を再試行</button><button id="closeHistory">閉じる</button></div></dialog>
+  <dialog id="actionDialog" class="action-dialog"><div class="modal-heading"><div><span class="eyebrow">ACTION & TRIGGERS</span><h2 id="actionTitle">アクション編集</h2></div><button id="closeAction" aria-label="編集を閉じる">×</button></div><form id="actionForm"><div id="actionFields"></div><p id="actionError" role="alert"></p><div class="dialog-actions"><button id="cancelAction" type="button">キャンセル</button><button type="submit" class="primary">適用</button></div></form></dialog>
+</body>
+</html>
